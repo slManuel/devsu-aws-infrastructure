@@ -1,6 +1,6 @@
 resource "aws_security_group" "database" {
   name        = "${var.name}-sg"
-  description = "Permite PostgreSQL únicamente desde los nodos del clúster EKS."
+  description = "Permite PostgreSQL solo desde nodos del cluster EKS."
   vpc_id      = var.vpc_id
 
   ingress {
