@@ -12,7 +12,7 @@ metadata:
 spec:
   ingressClassName: alb
   rules:
-    - host: api.example.com
+    - host: k8s-devsu-devsuapi-5e8a33efc3-1351564505.us-east-2.elb.amazonaws.com
       http:
         paths:
           - path: /
