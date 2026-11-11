@@ -73,6 +73,11 @@ resource "aws_iam_role_policy_attachment" "node_ecr_pull" {
   policy_arn = aws_iam_policy.node_ecr_pull.arn
 }
 
+resource "aws_iam_role_policy_attachment" "node_ecr_pull_eks" {
+  role       = aws_iam_role.node.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPullOnly"
+}
+
 resource "aws_launch_template" "nodes" {
   name_prefix            = "${var.name}-nodes-"
   update_default_version = true
@@ -332,6 +337,7 @@ resource "aws_eks_node_group" "this" {
   depends_on = [
     aws_iam_role_policy_attachment.node_worker,
     aws_iam_role_policy_attachment.node_ecr_pull,
+    aws_iam_role_policy_attachment.node_ecr_pull_eks,
     aws_eks_addon.kube_proxy,
     aws_eks_addon.vpc_cni,
     aws_eks_pod_identity_association.vpc_cni
