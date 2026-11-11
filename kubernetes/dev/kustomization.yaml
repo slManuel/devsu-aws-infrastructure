@@ -20,5 +20,5 @@ labels:
 
 images:
   - name: devsu-api
-    newName: 111122223333.dkr.ecr.us-east-2.amazonaws.com/devsu-dev-api
-    newTag: git-reemplazar-por-sha
+    newName: 297196566401.dkr.ecr.us-east-2.amazonaws.com/devsu-dev-api
+    newTag: git-28ecf6a3ac56b22713b455162e7049ba501777e2
