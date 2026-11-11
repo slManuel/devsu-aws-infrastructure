@@ -64,18 +64,27 @@ spec:
             httpGet:
               path: /healthz/
               port: http
+              httpHeaders:
+                - name: Host
+                  value: k8s-devsu-devsuapi-5e8a33efc3-1351564505.us-east-2.elb.amazonaws.com
             periodSeconds: 5
             failureThreshold: 12
           readinessProbe:
             httpGet:
               path: /healthz/
               port: http
+              httpHeaders:
+                - name: Host
+                  value: k8s-devsu-devsuapi-5e8a33efc3-1351564505.us-east-2.elb.amazonaws.com
             periodSeconds: 5
             timeoutSeconds: 2
           livenessProbe:
             httpGet:
               path: /healthz/
               port: http
+              httpHeaders:
+                - name: Host
+                  value: k8s-devsu-devsuapi-5e8a33efc3-1351564505.us-east-2.elb.amazonaws.com
             periodSeconds: 15
             timeoutSeconds: 2
             failureThreshold: 3
