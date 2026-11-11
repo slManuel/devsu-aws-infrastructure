@@ -1,0 +1,5 @@
+bucket       = "REEMPLAZAR-con-nombre-del-bucket"
+key          = "devsu/dev/terraform.tfstate"
+region       = "us-east-2"
+encrypt      = true
+use_lockfile = true

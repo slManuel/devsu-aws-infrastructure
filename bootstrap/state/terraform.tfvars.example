@@ -1,0 +1,3 @@
+# Cambia este nombre por uno globalmente único antes de usar el bootstrap.
+state_bucket_name = "devsu-tfstate-REEMPLAZAR-con-sufijo-unico"
+aws_region        = "us-east-2"

@@ -1,0 +1,24 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secret-store.yaml
+  - external-secret.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+  - pdb.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: devsu
+      app.kubernetes.io/managed-by: kustomize
+    includeSelectors: true
+    includeTemplates: true
+
+images:
+  - name: devsu-api
+    newName: 111122223333.dkr.ecr.us-east-2.amazonaws.com/devsu-dev-api
+    newTag: git-reemplazar-por-sha
