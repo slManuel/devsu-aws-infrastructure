@@ -35,13 +35,13 @@ jobs:
         run: |
           curl --fail --silent --show-error --location \
             "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" \
-            --output "${RUNNER_TEMP}/terraform.zip"
+            --output "${RUNNER_TEMP}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip"
           curl --fail --silent --show-error --location \
             "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_SHA256SUMS" \
             --output "${RUNNER_TEMP}/terraform_SHA256SUMS"
           cd "${RUNNER_TEMP}"
           grep "terraform_${TERRAFORM_VERSION}_linux_amd64.zip$" terraform_SHA256SUMS | sha256sum --check --status
-          unzip -o terraform.zip -d terraform
+          unzip -o "terraform_${TERRAFORM_VERSION}_linux_amd64.zip" -d terraform
           sudo install -m 0755 terraform/terraform /usr/local/bin/terraform
           terraform version
 
