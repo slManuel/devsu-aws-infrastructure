@@ -241,6 +241,68 @@ resource "aws_eks_pod_identity_association" "external_secrets" {
   depends_on = [aws_eks_addon.pod_identity_agent, aws_iam_role_policy_attachment.external_secrets_read]
 }
 
+data "aws_iam_policy_document" "load_balancer_assume_role" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole", "sts:TagSession"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["pods.eks.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+
+    condition {
+      test     = "ArnEquals"
+      variable = "aws:SourceArn"
+      values   = ["arn:${data.aws_partition.current.partition}:eks:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:cluster/${var.name}"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/kubernetes-namespace"
+      values   = ["kube-system"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/kubernetes-service-account"
+      values   = ["aws-load-balancer-controller"]
+    }
+  }
+}
+
+resource "aws_iam_role" "load_balancer_controller" {
+  name               = "${var.name}-load-balancer-controller-role"
+  assume_role_policy = data.aws_iam_policy_document.load_balancer_assume_role.json
+  tags               = var.tags
+}
+
+resource "aws_iam_policy" "load_balancer_controller" {
+  name        = "${var.name}-load-balancer-controller"
+  description = "Permite al controlador de AWS administrar balanceadores del clúster."
+  policy      = jsonencode(jsondecode(file("${path.module}/policies/aws-load-balancer-controller-iam-policy.json")))
+}
+
+resource "aws_iam_role_policy_attachment" "load_balancer_controller" {
+  role       = aws_iam_role.load_balancer_controller.name
+  policy_arn = aws_iam_policy.load_balancer_controller.arn
+}
+
+resource "aws_eks_pod_identity_association" "load_balancer_controller" {
+  cluster_name    = aws_eks_cluster.this.name
+  namespace       = "kube-system"
+  service_account = "aws-load-balancer-controller"
+  role_arn        = aws_iam_role.load_balancer_controller.arn
+
+  depends_on = [aws_eks_addon.pod_identity_agent, aws_iam_role_policy_attachment.load_balancer_controller]
+}
+
 resource "aws_eks_node_group" "this" {
   cluster_name    = aws_eks_cluster.this.name
   node_group_name = "${var.name}-workers"
