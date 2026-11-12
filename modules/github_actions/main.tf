@@ -81,7 +81,7 @@ data "aws_iam_policy_document" "api_publisher" {
 }
 
 resource "aws_iam_role_policy" "api_publisher" {
-  name   = "${var.project_name}-api-deploy"
+  name   = "${var.project_name}-api-ecr-push"
   role   = aws_iam_role.api_publisher.id
   policy = data.aws_iam_policy_document.api_publisher.json
 }
