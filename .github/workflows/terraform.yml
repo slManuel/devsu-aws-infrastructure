@@ -165,7 +165,7 @@ jobs:
             fi
           }
 
-          plan_root bootstrap/state devsu/bootstrap/terraform.tfstate bootstrap.tfplan
+          plan_root bootstrap/state devsu/bootstrap/state/terraform.tfstate bootstrap.tfplan
 
           terraform -chdir=environments/ci init \
             -backend-config="bucket=${TF_STATE_BUCKET}" \
