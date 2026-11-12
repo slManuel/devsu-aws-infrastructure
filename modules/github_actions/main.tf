@@ -170,7 +170,7 @@ data "aws_iam_policy_document" "infrastructure_deployer" {
       "s3:DeleteObjectVersion",
     ]
     resources = [
-      "arn:${data.aws_partition.current.partition}:s3:::${var.tf_state_bucket_name}/devsu/bootstrap/terraform.tfstate",
+      "arn:${data.aws_partition.current.partition}:s3:::${var.tf_state_bucket_name}/devsu/bootstrap/state/terraform.tfstate",
       "arn:${data.aws_partition.current.partition}:s3:::${var.tf_state_bucket_name}/devsu/ci/terraform.tfstate",
       "arn:${data.aws_partition.current.partition}:s3:::${var.tf_state_bucket_name}/devsu/dev/terraform.tfstate",
     ]
