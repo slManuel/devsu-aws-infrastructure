@@ -8,6 +8,11 @@ output "api_publisher_role_arn" {
   value       = module.github_actions.api_publisher_role_arn
 }
 
+output "infrastructure_deployer_role_arn" {
+  description = "ARN del rol que debe usarse como variable AWS_INFRA_ROLE_ARN en GitHub."
+  value       = module.github_actions.infrastructure_deployer_role_arn
+}
+
 output "api_ecr_repository_url" {
   description = "URI que debe configurarse como variable ECR_REPOSITORY_URI en el repositorio de la API."
   value       = local.api_ecr_repository_url

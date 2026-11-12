@@ -135,6 +135,31 @@ resource "aws_eks_cluster" "this" {
   depends_on = [aws_iam_role_policy_attachment.cluster_policy]
 }
 
+resource "aws_eks_access_entry" "api_deployer" {
+  cluster_name      = aws_eks_cluster.this.name
+  principal_arn     = var.api_deployer_role_arn
+  type              = "STANDARD"
+  kubernetes_groups = ["devsu-api-deployer"]
+}
+
+resource "aws_eks_access_entry" "infra_deployer" {
+  cluster_name  = aws_eks_cluster.this.name
+  principal_arn = var.infra_deployer_role_arn
+  type          = "STANDARD"
+}
+
+resource "aws_eks_access_policy_association" "infra_deployer_admin" {
+  cluster_name  = aws_eks_cluster.this.name
+  principal_arn = var.infra_deployer_role_arn
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
+
+  depends_on = [aws_eks_access_entry.infra_deployer]
+}
+
 resource "aws_eks_addon" "pod_identity_agent" {
   cluster_name                = aws_eks_cluster.this.name
   addon_name                  = "eks-pod-identity-agent"

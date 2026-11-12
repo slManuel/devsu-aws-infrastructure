@@ -1,0 +1,51 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: __JOB_NAME__
+  namespace: devsu
+  labels:
+    app.kubernetes.io/name: devsu-api-migration
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: devsu-api-migration
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: __IMAGE__
+          command: ["python", "manage.py", "migrate", "--noinput"]
+          envFrom:
+            - configMapRef:
+                name: devsu-api-config
+            - secretRef:
+                name: devsu-api-runtime
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
