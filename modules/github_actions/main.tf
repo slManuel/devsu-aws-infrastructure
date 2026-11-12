@@ -208,6 +208,25 @@ data "aws_iam_policy_document" "infrastructure_deployer" {
   }
 
   statement {
+    sid    = "ManageProjectIamPolicies"
+    effect = "Allow"
+    actions = [
+      "iam:CreatePolicy",
+      "iam:CreatePolicyVersion",
+      "iam:DeletePolicy",
+      "iam:DeletePolicyVersion",
+      "iam:GetPolicy",
+      "iam:GetPolicyVersion",
+      "iam:ListEntitiesForPolicy",
+      "iam:ListPolicyVersions",
+      "iam:SetDefaultPolicyVersion",
+      "iam:TagPolicy",
+      "iam:UntagPolicy",
+    ]
+    resources = ["arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:policy/${var.project_name}-*"]
+  }
+
+  statement {
     sid       = "PassProjectRolesOnlyToAwsWorkloads"
     effect    = "Allow"
     actions   = ["iam:PassRole"]
