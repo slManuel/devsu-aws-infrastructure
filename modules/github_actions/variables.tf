@@ -23,6 +23,21 @@ variable "api_repository_id" {
   type        = string
 }
 
+variable "infra_repository_name" {
+  description = "Nombre del repositorio GitHub que contiene la infraestructura Terraform."
+  type        = string
+}
+
+variable "infra_repository_id" {
+  description = "Identificador numérico e inmutable del repositorio de infraestructura."
+  type        = string
+}
+
+variable "tf_state_bucket_name" {
+  description = "Bucket S3 existente que conserva los estados de Terraform."
+  type        = string
+}
+
 variable "api_ecr_repository_arn" {
   description = "ARN del repositorio ECR exclusivo de la API."
   type        = string

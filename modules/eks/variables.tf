@@ -60,3 +60,8 @@ variable "api_deployer_role_arn" {
   description = "Rol OIDC de GitHub Actions autorizado a desplegar la API en el namespace devsu."
   type        = string
 }
+
+variable "infra_deployer_role_arn" {
+  description = "Rol OIDC de GitHub Actions autorizado a administrar el clúster para Terraform y el RBAC inicial."
+  type        = string
+}

@@ -21,7 +21,10 @@ module "github_actions" {
   github_owner_id        = var.github_owner_id
   api_repository_name    = var.api_repository_name
   api_repository_id      = var.api_repository_id
+  infra_repository_name  = var.infra_repository_name
+  infra_repository_id    = var.infra_repository_id
   api_ecr_repository_arn = local.api_ecr_repository_arn
   api_eks_cluster_arn    = local.api_eks_cluster_arn
+  tf_state_bucket_name   = var.tf_state_bucket_name
   tags                   = local.ci_tags
 }

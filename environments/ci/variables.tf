@@ -44,3 +44,26 @@ variable "api_repository_id" {
     error_message = "Indica el ID numérico del repositorio GitHub de la API."
   }
 }
+
+variable "infra_repository_name" {
+  description = "Nombre del repositorio GitHub de infraestructura Terraform."
+  type        = string
+  default     = "devsu-aws-infrastructure"
+}
+
+variable "infra_repository_id" {
+  description = "Identificador numérico e inmutable del repositorio de infraestructura."
+  type        = string
+  default     = "1450754407"
+
+  validation {
+    condition     = can(regex("^[0-9]+$", var.infra_repository_id))
+    error_message = "Indica el ID numérico del repositorio GitHub de infraestructura."
+  }
+}
+
+variable "tf_state_bucket_name" {
+  description = "Bucket S3 existente que contiene los estados remotos de Terraform."
+  type        = string
+  default     = "devsu-tfstate-297196566401-us-east-2-20261110"
+}
