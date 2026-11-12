@@ -3,6 +3,11 @@ variable "project_name" {
   type        = string
 }
 
+variable "aws_region" {
+  description = "Región única donde el rol de Terraform puede administrar recursos."
+  type        = string
+}
+
 variable "github_owner" {
   description = "Usuario u organización propietaria del repositorio GitHub de la API."
   type        = string

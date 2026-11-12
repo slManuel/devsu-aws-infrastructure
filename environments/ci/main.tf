@@ -16,6 +16,7 @@ locals {
 module "github_actions" {
   source = "../../modules/github_actions"
 
+  aws_region             = var.aws_region
   project_name           = "${var.project_name}-${var.environment}"
   github_owner           = var.github_owner
   github_owner_id        = var.github_owner_id

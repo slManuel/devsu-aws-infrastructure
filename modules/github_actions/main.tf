@@ -130,6 +130,22 @@ resource "aws_iam_role_policy_attachment" "infrastructure_deployer_power_user" {
 
 data "aws_iam_policy_document" "infrastructure_deployer" {
   statement {
+    sid    = "DenyResourcesOutsideProjectRegion"
+    effect = "Deny"
+    not_actions = [
+      "iam:*",
+      "sts:*",
+    ]
+    resources = ["*"]
+
+    condition {
+      test     = "StringNotEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
+
+  statement {
     sid     = "DenyAccessOutsideTerraformStateBucket"
     effect  = "Deny"
     actions = ["s3:*"]
