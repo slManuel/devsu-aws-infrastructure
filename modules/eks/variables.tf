@@ -55,3 +55,8 @@ variable "api_ecr_repository_arn" {
   description = "ARN del repositorio ECR del que los nodos pueden descargar imágenes."
   type        = string
 }
+
+variable "api_deployer_role_arn" {
+  description = "Rol OIDC de GitHub Actions autorizado a desplegar la API en el namespace devsu."
+  type        = string
+}

@@ -28,6 +28,11 @@ variable "api_ecr_repository_arn" {
   type        = string
 }
 
+variable "api_eks_cluster_arn" {
+  description = "ARN del único clúster EKS al que el workflow de la API puede conectarse."
+  type        = string
+}
+
 variable "tags" {
   description = "Etiquetas aplicadas a los recursos IAM."
   type        = map(string)

@@ -36,7 +36,7 @@ data "aws_iam_policy_document" "api_publisher_trust" {
 
 resource "aws_iam_role" "api_publisher" {
   name                 = "${var.project_name}-api-publisher"
-  description          = "Permite al workflow de main publicar la imagen de la API en su repositorio ECR."
+  description          = "Permite al workflow de main publicar la imagen y desplegar la API en el clúster EKS asignado."
   assume_role_policy   = data.aws_iam_policy_document.api_publisher_trust.json
   max_session_duration = 3600
   tags                 = var.tags
@@ -63,10 +63,21 @@ data "aws_iam_policy_document" "api_publisher" {
     ]
     resources = [var.api_ecr_repository_arn]
   }
+
+  statement {
+    sid    = "ManageApiClusterRunnerAccess"
+    effect = "Allow"
+    actions = [
+      "eks:DescribeCluster",
+      "eks:DescribeUpdate",
+      "eks:UpdateClusterConfig",
+    ]
+    resources = [var.api_eks_cluster_arn]
+  }
 }
 
 resource "aws_iam_role_policy" "api_publisher" {
-  name   = "${var.project_name}-api-ecr-push"
+  name   = "${var.project_name}-api-deploy"
   role   = aws_iam_role.api_publisher.id
   policy = data.aws_iam_policy_document.api_publisher.json
 }

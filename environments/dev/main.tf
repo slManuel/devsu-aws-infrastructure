@@ -19,6 +19,10 @@ locals {
   }
 }
 
+data "aws_iam_role" "api_publisher" {
+  name = "${var.project_name}-${var.environment}-api-publisher"
+}
+
 module "network" {
   source = "../../modules/network"
 
@@ -53,6 +57,7 @@ module "eks" {
   node_count                           = 2
   api_runtime_secret_arn               = module.secrets.api_runtime_secret_arn
   api_ecr_repository_arn               = module.ecr.repository_arn
+  api_deployer_role_arn                = data.aws_iam_role.api_publisher.arn
   tags                                 = local.common_tags
 }
 
