@@ -1,0 +1,315 @@
+name: Detener entorno Devsu en AWS
+
+on:
+  schedule:
+    # 18:00 del 13/11 en El Salvador (UTC-6).
+    - cron: "0 0 14 11 *"
+  workflow_dispatch:
+    inputs:
+      confirmacion:
+        description: Escribe DETENER-DEVSU-DEV para confirmar la baja manual.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: devsu-dev-shutdown
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-2
+  AWS_ACCOUNT_ID: "297196566401"
+  AWS_INFRA_ROLE_ARN: ${{ vars.AWS_INFRA_ROLE_ARN }}
+  TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+  TF_VAR_cluster_endpoint_public_access_cidrs: ${{ secrets.CLUSTER_ENDPOINT_PUBLIC_ACCESS_CIDRS_JSON }}
+  TERRAFORM_VERSION: "1.15.9"
+  KUBECTL_VERSION: "1.37.0"
+  CLUSTER_NAME: devsu-dev-cluster
+  ECR_REPOSITORY_NAME: devsu-dev-api
+  RDS_INSTANCE_ID: devsu-dev-postgres
+  RDS_FINAL_SNAPSHOT_ID: devsu-dev-postgres-final
+  RUNTIME_SECRET_NAME: devsu-dev/api-runtime
+  ALB_DNS_PREFIX: k8s-devsu-devsuapi-5e8a33efc3-
+  EKS_LOG_GROUP: /aws/eks/devsu-dev-cluster/cluster
+
+jobs:
+  detener:
+    name: Destruir el entorno dev y verificar recursos remanentes
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' &&
+      inputs.confirmacion == 'DETENER-DEVSU-DEV'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Obtener el código
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Comprobar fecha y configuración de destino
+        env:
+          CONFIRMACION: ${{ inputs.confirmacion }}
+        run: |
+          set -euo pipefail
+          test "$(date -u +'%F')" = "2026-11-14"
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && \
+            "${CONFIRMACION}" != "DETENER-DEVSU-DEV" ]]; then
+            echo "La confirmación manual no coincide; no se tocará AWS." >&2
+            exit 1
+          fi
+          test -n "${AWS_INFRA_ROLE_ARN}"
+          test -n "${TF_STATE_BUCKET}"
+          test -n "${TF_VAR_cluster_endpoint_public_access_cidrs}"
+
+      - name: Obtener credenciales temporales de AWS con OIDC
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ env.AWS_INFRA_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: devsu-shutdown-${{ github.run_id }}
+          mask-aws-account-id: true
+
+      - name: Confirmar que se opera en la cuenta correcta
+        run: |
+          set -euo pipefail
+          actual_account="$(aws sts get-caller-identity --query Account --output text)"
+          if [[ "${actual_account}" != "${AWS_ACCOUNT_ID}" ]]; then
+            echo "Cuenta AWS inesperada; se cancela la baja." >&2
+            exit 1
+          fi
+          echo "Cuenta y región confirmadas: ${AWS_REGION}."
+
+      - name: Instalar Terraform y verificar su checksum
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" \
+            --output "${RUNNER_TEMP}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip"
+          curl --fail --silent --show-error --location \
+            "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_SHA256SUMS" \
+            --output "${RUNNER_TEMP}/terraform_SHA256SUMS"
+          cd "${RUNNER_TEMP}"
+          grep "terraform_${TERRAFORM_VERSION}_linux_amd64.zip$" terraform_SHA256SUMS \
+            | sha256sum --check --status
+          unzip -o "terraform_${TERRAFORM_VERSION}_linux_amd64.zip" -d terraform
+          sudo install -m 0755 terraform/terraform /usr/local/bin/terraform
+          terraform version
+
+      - name: Instalar kubectl y verificar su checksum
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
+            --output "${RUNNER_TEMP}/kubectl"
+          curl --fail --silent --show-error --location \
+            "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl.sha256" \
+            --output "${RUNNER_TEMP}/kubectl.sha256"
+          echo "$(cat "${RUNNER_TEMP}/kubectl.sha256")  ${RUNNER_TEMP}/kubectl" \
+            | sha256sum --check --status
+          sudo install -m 0755 "${RUNNER_TEMP}/kubectl" /usr/local/bin/kubectl
+
+      - name: Inicializar el estado remoto de dev
+        run: |
+          terraform -chdir=environments/dev init \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=devsu/dev/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true" \
+            -input=false
+
+      - name: Retirar el Ingress para que el controlador libere el ALB
+        id: ingress
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          if aws eks describe-cluster --region "${AWS_REGION}" --name "${CLUSTER_NAME}" >/dev/null 2>&1; then
+            bash ci/scripts/manage-eks-runner-cidr.sh add "${CLUSTER_NAME}" "${AWS_REGION}"
+            aws eks update-kubeconfig --region "${AWS_REGION}" --name "${CLUSTER_NAME}"
+            kubectl delete ingress devsu-api --namespace devsu \
+              --ignore-not-found --wait=true --timeout=240s
+          else
+            echo "El clúster ya no existe; se continúa con la limpieza de AWS."
+          fi
+
+      - name: Esperar a que el controlador de Kubernetes libere el ALB
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 18); do
+            lb_arns="$(aws elbv2 describe-load-balancers --region "${AWS_REGION}" --output json \
+              | jq -r --arg prefix "${ALB_DNS_PREFIX}" \
+                '.LoadBalancers[] | select(.DNSName | startswith($prefix)) | .LoadBalancerArn')"
+            if [[ -z "${lb_arns}" ]]; then
+              echo "El ALB ya fue liberado por el controlador de Kubernetes."
+              exit 0
+            fi
+            echo "Esperando al controlador para retirar el ALB (intento ${attempt}/18)."
+            sleep 10
+          done
+          echo "El ALB sigue presente; se intentará retirar de forma segura después de destruir EKS."
+
+      - name: Retirar la autorización temporal del runner
+        if: ${{ always() && steps.ingress.outputs.changed == 'true' }}
+        env:
+          RUNNER_CIDR: ${{ steps.ingress.outputs.runner_cidr }}
+        run: |
+          if [[ -n "${RUNNER_CIDR}" ]] && \
+            aws eks describe-cluster --region "${AWS_REGION}" --name "${CLUSTER_NAME}" >/dev/null 2>&1; then
+            bash ci/scripts/manage-eks-runner-cidr.sh remove \
+              "${CLUSTER_NAME}" "${AWS_REGION}" "${RUNNER_CIDR}"
+          fi
+
+      - name: Vaciar el registro de contenedores de este entorno
+        run: |
+          if aws ecr describe-repositories --region "${AWS_REGION}" \
+            --repository-names "${ECR_REPOSITORY_NAME}" >/dev/null 2>&1; then
+            aws ecr delete-repository --region "${AWS_REGION}" \
+              --repository-name "${ECR_REPOSITORY_NAME}" --force
+          else
+            echo "El repositorio ECR ya no existe."
+          fi
+
+      - name: Generar y mostrar el plan de destrucción de Terraform
+        run: |
+          set -euo pipefail
+          terraform -chdir=environments/dev plan \
+            -destroy -input=false -no-color \
+            -out="${RUNNER_TEMP}/devsu-dev-destroy.tfplan"
+          terraform -chdir=environments/dev show -no-color \
+            "${RUNNER_TEMP}/devsu-dev-destroy.tfplan"
+
+      - name: Aplicar la destrucción del entorno dev
+        id: destroy_first
+        continue-on-error: true
+        run: |
+          terraform -chdir=environments/dev apply \
+            -input=false -auto-approve \
+            "${RUNNER_TEMP}/devsu-dev-destroy.tfplan"
+
+      - name: Retirar el ALB de la API si EKS no pudo liberarlo
+        if: ${{ steps.destroy_first.outcome == 'failure' }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 24); do
+            lb_arns="$(aws elbv2 describe-load-balancers --region "${AWS_REGION}" --output json \
+              | jq -r --arg prefix "${ALB_DNS_PREFIX}" \
+                '.LoadBalancers[] | select(.DNSName | startswith($prefix)) | .LoadBalancerArn')"
+            if [[ -z "${lb_arns}" ]]; then
+              echo "No queda un ALB de esta API; Terraform puede reintentar la destrucción."
+              exit 0
+            fi
+            while IFS= read -r lb_arn; do
+              [[ -n "${lb_arn}" ]] || continue
+              echo "Eliminando el ALB huérfano de esta API: ${lb_arn}"
+              aws elbv2 delete-load-balancer --region "${AWS_REGION}" --load-balancer-arn "${lb_arn}"
+            done <<< "${lb_arns}"
+            sleep 10
+          done
+          echo "El ALB no se pudo retirar; se detiene para evitar un cierre incompleto." >&2
+          exit 1
+
+      - name: Reintentar Terraform si la primera destrucción encontró dependencias
+        if: ${{ steps.destroy_first.outcome == 'failure' }}
+        run: |
+          set -euo pipefail
+          terraform -chdir=environments/dev plan \
+            -destroy -input=false -no-color \
+            -out="${RUNNER_TEMP}/devsu-dev-destroy-retry.tfplan"
+          terraform -chdir=environments/dev apply \
+            -input=false -auto-approve \
+            "${RUNNER_TEMP}/devsu-dev-destroy-retry.tfplan"
+
+      - name: Eliminar logs de EKS para detener cargos de almacenamiento
+        run: |
+          if aws logs describe-log-groups --region "${AWS_REGION}" \
+            --log-group-name-prefix "${EKS_LOG_GROUP}" \
+            --query 'logGroups[].logGroupName' --output text \
+            | tr '\t' '\n' \
+            | grep --fixed-strings --line-regexp "${EKS_LOG_GROUP}" >/dev/null; then
+            aws logs delete-log-group --region "${AWS_REGION}" --log-group-name "${EKS_LOG_GROUP}"
+          fi
+
+      - name: Verificar los servicios que generan cargos por hora
+        run: |
+          set -euo pipefail
+          if aws eks describe-cluster --region "${AWS_REGION}" --name "${CLUSTER_NAME}" >/dev/null 2>&1; then
+            echo "El clúster EKS todavía existe." >&2
+            exit 1
+          fi
+          if aws rds describe-db-instances --region "${AWS_REGION}" \
+            --db-instance-identifier "${RDS_INSTANCE_ID}" >/dev/null 2>&1; then
+            echo "La instancia RDS todavía existe." >&2
+            exit 1
+          fi
+          snapshot_status="$(aws rds describe-db-snapshots --region "${AWS_REGION}" \
+            --db-snapshot-identifier "${RDS_FINAL_SNAPSHOT_ID}" \
+            --query 'DBSnapshots[0].Status' --output text)"
+          if [[ "${snapshot_status}" != "available" ]]; then
+            echo "El snapshot final no está disponible: ${snapshot_status}" >&2
+            exit 1
+          fi
+          remaining_albs="$(aws elbv2 describe-load-balancers --region "${AWS_REGION}" --output json \
+            | jq -r --arg prefix "${ALB_DNS_PREFIX}" \
+              '.LoadBalancers[] | select(.DNSName | startswith($prefix)) | .DNSName')"
+          if [[ -n "${remaining_albs}" ]]; then
+            echo "El ALB todavía existe: ${remaining_albs}" >&2
+            exit 1
+          fi
+          remaining_nat="$(aws ec2 describe-nat-gateways --region "${AWS_REGION}" \
+            --filter Name=tag:Name,Values=devsu-dev-nat \
+            --query 'NatGateways[?State != `deleted`].NatGatewayId' --output text)"
+          if [[ -n "${remaining_nat}" && "${remaining_nat}" != "None" ]]; then
+            echo "La NAT Gateway todavía existe: ${remaining_nat}" >&2
+            exit 1
+          fi
+          remaining_eips="$(aws ec2 describe-addresses --region "${AWS_REGION}" \
+            --filters Name=tag:Name,Values=devsu-dev-nat \
+            --query 'Addresses[].AllocationId' --output text)"
+          if [[ -n "${remaining_eips}" && "${remaining_eips}" != "None" ]]; then
+            echo "La IP elástica de la NAT todavía existe: ${remaining_eips}" >&2
+            exit 1
+          fi
+          remaining_instances="$(aws ec2 describe-instances --region "${AWS_REGION}" \
+            --filters Name=tag:Name,Values=devsu-dev-cluster-node \
+              Name=instance-state-name,Values=pending,running,stopping,stopped \
+            --query 'Reservations[].Instances[].InstanceId' --output text)"
+          if [[ -n "${remaining_instances}" && "${remaining_instances}" != "None" ]]; then
+            echo "Quedan instancias EC2 del node group: ${remaining_instances}" >&2
+            exit 1
+          fi
+          if aws ecr describe-repositories --region "${AWS_REGION}" \
+            --repository-names "${ECR_REPOSITORY_NAME}" >/dev/null 2>&1; then
+            echo "El repositorio ECR todavía existe." >&2
+            exit 1
+          fi
+          if aws secretsmanager describe-secret --region "${AWS_REGION}" \
+            --secret-id "${RUNTIME_SECRET_NAME}" >/dev/null 2>&1; then
+            secret_deleted_at="$(aws secretsmanager describe-secret --region "${AWS_REGION}" \
+              --secret-id "${RUNTIME_SECRET_NAME}" --query DeletedDate --output text)"
+            if [[ -z "${secret_deleted_at}" || "${secret_deleted_at}" == "None" ]]; then
+              echo "El secreto runtime sigue activo." >&2
+              exit 1
+            fi
+          fi
+          echo "EKS, EC2, RDS, ALB, NAT Gateway, IP elástica y ECR ya no generan cargos por hora o almacenamiento de imágenes."
+          echo "El secreto runtime queda programado para borrado con la ventana recuperable configurada de 7 días."
+          echo "Se conserva el snapshot ${RDS_FINAL_SNAPSHOT_ID} (available) y el bucket de estado Terraform para permitir una recuperación."
+
+      - name: Resumen de la baja
+        if: always()
+        run: |
+          {
+            echo "## Baja del entorno Devsu"
+            echo
+            echo "- Región: \`${AWS_REGION}\`"
+            echo "- Entorno destruido: \`dev\` (EKS, EC2, RDS, VPC/NAT/IP elástica, ALB y ECR)."
+            echo "- Snapshot conservado: \`${RDS_FINAL_SNAPSHOT_ID}\` (puede generar almacenamiento facturable)."
+            echo "- El secreto runtime queda con borrado programado y recuperación posible durante 7 días."
+            echo "- Estado remoto de Terraform conservado en S3 para reconstrucción."
+            echo "- El total de facturación de AWS puede tardar en reflejar la baja; cargos ya acumulados no se revierten."
+          } >> "${GITHUB_STEP_SUMMARY}"
